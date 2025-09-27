@@ -3,7 +3,7 @@ const https = require('https');
 const getTransakBaseUrl = (environment) => {
   return environment === 'PRODUCTION' 
     ? 'https://api-gateway.transak.com' 
-    : 'https://api-gateway-stg.transak.com';
+    : 'https://api-gateway-sdk.transak.com';
 };
 
 const makeHttpRequest = (url, method, data, headers = {}) => {
@@ -84,21 +84,6 @@ const validateWidgetConfig = (config) => {
     errors.push('Invalid country code');
   }
 
-  // Validate wallet address format (basic validation)
-  if (config.walletAddress && config.walletAddress.length > 0) {
-    if (config.walletAddress.length < 10) {
-      errors.push('Invalid wallet address format');
-    }
-  }
-
-  // Validate email format
-  if (config.email && config.email.length > 0) {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(config.email)) {
-      errors.push('Invalid email format');
-    }
-  }
-
   return errors;
 };
 
@@ -143,14 +128,22 @@ module.exports = async function (context, req) {
     const environment = process.env.TRANSAK_ENVIRONMENT || 'STAGING';
     const baseUrl = getTransakBaseUrl(environment);
 
-    // Validate and sanitize widget configuration
-    const widgetConfig = {
+    // Build widget parameters according to new API format
+    const widgetParams = {
+      // Mandatory parameters (as per Transak documentation)
+      apiKey: process.env.TRANSAK_API_KEY,
+      referrerDomain: req.headers.origin || req.headers.referer || process.env.ALLOWED_DOMAINS?.split(',')[0] || 'http://localhost:3000',
+      
+      // Core widget configuration
+      environment: environment,
       fiatCurrency: req.body.fiatCurrency || 'USD',
       cryptoCurrencyCode: req.body.cryptoCurrencyCode || 'ETH',
       fiatAmount: Math.max(10, Math.min(50000, req.body.fiatAmount || 100)),
       network: req.body.network || 'ethereum',
       countryCode: req.body.countryCode || 'US',
       themeColor: req.body.themeColor || '000000',
+      
+      // UI configuration
       isAutoFillUserData: req.body.isAutoFillUserData !== false,
       hideMenu: req.body.hideMenu === true,
       exchangeScreenTitle: req.body.exchangeScreenTitle || 'Buy Crypto',
@@ -159,8 +152,30 @@ module.exports = async function (context, req) {
       disableWalletAddressForm: req.body.disableWalletAddressForm === true,
     };
 
+    // Add optional fields
+    if (req.body.walletAddress && req.body.walletAddress.length > 0) {
+      widgetParams.walletAddress = req.body.walletAddress;
+    }
+    if (req.body.email && req.body.email.length > 0) {
+      widgetParams.email = req.body.email;
+    }
+    if (req.body.isSell === true) {
+      widgetParams.isSell = true;
+    }
+
+    // Validate mandatory parameters
+    if (!widgetParams.apiKey) {
+      throw new Error('TRANSAK_API_KEY environment variable is required');
+    }
+    if (!widgetParams.referrerDomain) {
+      throw new Error('referrerDomain is required - could not determine from request headers or environment');
+    }
+
+    context.log(`Creating widget URL with referrerDomain: ${widgetParams.referrerDomain}`);
+    context.log(`Widget config: ${widgetParams.fiatCurrency}/${widgetParams.cryptoCurrencyCode} on ${widgetParams.network}`);
+
     // Validate configuration
-    const validationErrors = validateWidgetConfig(widgetConfig);
+    const validationErrors = validateWidgetConfig(widgetParams);
     if (validationErrors.length > 0) {
       context.res = {
         ...context.res,
@@ -173,54 +188,39 @@ module.exports = async function (context, req) {
       return;
     }
 
-    // Add reference domain for security
-    const origin = req.headers.origin || req.headers.referer;
-    if (origin) {
-      widgetConfig.referenceDomain = origin;
-    }
+    context.log(`Creating widget URL for ${widgetParams.fiatCurrency}/${widgetParams.cryptoCurrencyCode} on ${widgetParams.network}`);
 
-    // Add optional fields
-    if (req.body.walletAddress && req.body.walletAddress.length > 0) {
-      widgetConfig.walletAddress = req.body.walletAddress;
-    }
-    if (req.body.email && req.body.email.length > 0) {
-      widgetConfig.email = req.body.email;
-    }
-    if (req.body.isSell === true) {
-      widgetConfig.isSell = true;
-    }
-
-    context.log(`Creating widget URL for ${widgetConfig.fiatCurrency}/${widgetConfig.cryptoCurrencyCode} on ${widgetConfig.network}`);
-
+    // Use the new Create Widget URL API endpoint
     const response = await makeHttpRequest(
       `${baseUrl}/api/v1/widgets/create-url`,
       'POST',
-      widgetConfig,
+      { widgetParams },
       {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
       }
     );
 
-    if (response.url) {
+    if (response.widgetUrl) {
       context.log('Widget URL created successfully');
       context.res = {
         ...context.res,
         status: 200,
         body: {
-          url: response.url,
+          url: response.widgetUrl,
           expires_at: response.expires_at,
+          sessionId: response.sessionId,
           config: {
-            fiatCurrency: widgetConfig.fiatCurrency,
-            cryptoCurrencyCode: widgetConfig.cryptoCurrencyCode,
-            network: widgetConfig.network,
-            amount: widgetConfig.fiatAmount,
-            isSell: widgetConfig.isSell || false
+            fiatCurrency: widgetParams.fiatCurrency,
+            cryptoCurrencyCode: widgetParams.cryptoCurrencyCode,
+            network: widgetParams.network,
+            amount: widgetParams.fiatAmount,
+            isSell: widgetParams.isSell || false
           }
         }
       };
     } else {
-      throw new Error('Invalid response from Transak API - no URL received');
+      throw new Error('Invalid response from Transak API - no widgetUrl received');
     }
 
   } catch (error) {
