@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const TransakWidget = () => {
   const [widgetUrl, setWidgetUrl] = useState('');
@@ -85,8 +85,9 @@ const TransakWidget = () => {
       });
 
       if (!response.ok) {
+        // Handle different error types
         if (response.status === 404) {
-          throw new Error('API not found - Azure Functions not running');
+          throw new Error('Azure Functions not running - API endpoints not found');
         } else if (response.status === 500) {
           const contentType = response.headers.get('content-type');
           if (contentType && contentType.includes('application/json')) {
@@ -112,10 +113,10 @@ const TransakWidget = () => {
       return data.access_token;
     } catch (err) {
       const errorMsg = err.message.includes('fetch') 
-        ? 'API not available - using demo mode' 
+        ? 'API not available - check Azure Functions configuration' 
         : err.message;
-      setError(`Authentication: ${errorMsg}`);
-      console.warn('Auth error:', err.message);
+      setError(`Authentication failed: ${errorMsg}`);
+      console.error('Auth error:', err.message);
       return null;
     } finally {
       setIsLoading(false);
@@ -142,9 +143,18 @@ const TransakWidget = () => {
         disableWalletAddressForm: config.disableWalletAddressForm,
       };
 
-      if (config.walletAddress) widgetConfig.walletAddress = config.walletAddress;
-      if (config.email) widgetConfig.email = config.email;
-      if (transactionType === 'SELL') widgetConfig.isSell = true;
+      // Add optional fields
+      if (config.walletAddress) {
+        widgetConfig.walletAddress = config.walletAddress;
+      }
+      if (config.email) {
+        widgetConfig.email = config.email;
+      }
+
+      // Add transaction type for sell
+      if (transactionType === 'SELL') {
+        widgetConfig.isSell = true;
+      }
 
       const response = await fetch('/api/transak/create-widget-url', {
         method: 'POST',
@@ -157,7 +167,7 @@ const TransakWidget = () => {
 
       if (!response.ok) {
         if (response.status === 404) {
-          throw new Error('Widget URL API not available - using demo mode');
+          throw new Error('Widget URL API not available - check Azure Functions');
         }
         const errorData = await response.json();
         throw new Error(errorData.message || 'Failed to create widget URL');
@@ -165,51 +175,36 @@ const TransakWidget = () => {
 
       const data = await response.json();
       if (data.url || data.widgetUrl) {
+        // Handle both old and new API response formats
         const finalUrl = data.url || data.widgetUrl;
         setWidgetUrl(finalUrl);
-        setError('Production widget loaded successfully!');
+        setError(''); // Clear any errors on success
       } else {
         throw new Error('No widget URL received from API');
       }
     } catch (err) {
-      setError(`Widget URL: ${err.message}`);
-      console.warn('Widget URL creation error:', err.message);
+      setError(`Widget URL creation failed: ${err.message}`);
+      console.error('Widget URL creation error:', err.message);
     } finally {
       setIsLoading(false);
     }
   };
-  
-  const generateDemoWidget = useCallback(() => {
-    console.log('Generating demo widget preview (API-based URL required for live widget)');
-    console.log('Widget parameters:', {
-      fiatCurrency: config.fiatCurrency,
-      cryptoCurrencyCode: config.cryptoCurrencyCode,
-      fiatAmount: config.fiatAmount,
-      network: config.network,
-      transactionType: transactionType
-    });
-    
-    setWidgetUrl('demo-preview-mode');
-    setIsLoading(false);
-  }, [config, transactionType]);
-
-  const initializeWidget = async () => {
-    const token = await getAccessToken();
-    if (token) {
-      await createWidgetUrl(token);
-    } else {
-      generateDemoWidget();
-    }
-  };
 
   useEffect(() => {
-    setIsLoading(true);
-    const timer = setTimeout(() => {
-      generateDemoWidget();
-    }, 500);
-    
-    return () => clearTimeout(timer);
-  }, [generateDemoWidget]);
+    // Automatically try to initialize widget on component mount and config changes
+    const initializeWidget = async () => {
+      const token = await getAccessToken();
+      if (token) {
+        await createWidgetUrl(token);
+      } else {
+        // If API fails, show error message
+        setError('Failed to connect to Transak API. Please check your configuration.');
+        setIsLoading(false);
+      }
+    };
+
+    initializeWidget();
+  }, [config, transactionType]);
 
   const handleConfigChange = (key, value) => {
     setConfig(prev => ({
@@ -239,40 +234,38 @@ const TransakWidget = () => {
         </div>
 
         {error && (
-          <div className={`mb-6 border rounded-lg p-4 ${
-            error.includes('successfully') || error.includes('loaded') 
-              ? 'bg-green-50 border-green-200' 
-              : 'bg-yellow-50 border-yellow-200'
-          }`}>
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
             <div className="flex items-start">
               <div className="flex-shrink-0">
-                <span className={`text-xl ${
-                  error.includes('successfully') || error.includes('loaded') 
-                    ? 'text-green-400' 
-                    : 'text-yellow-400'
-                }`}>
-                  {error.includes('successfully') || error.includes('loaded') ? '✅' : '⚠️'}
-                </span>
+                <span className="text-red-400 text-xl">❌</span>
               </div>
               <div className="ml-3">
-                <h3 className={`text-sm font-medium ${
-                  error.includes('successfully') || error.includes('loaded') 
-                    ? 'text-green-800' 
-                    : 'text-yellow-800'
-                }`}>
-                  {error.includes('successfully') || error.includes('loaded') 
-                    ? 'Widget Active' 
-                    : 'Development Mode'}
-                </h3>
-                <div className={`mt-2 text-sm ${
-                  error.includes('successfully') || error.includes('loaded') 
-                    ? 'text-green-700' 
-                    : 'text-yellow-700'
-                }`}>
+                <h3 className="text-sm font-medium text-red-800">API Connection Error</h3>
+                <div className="mt-2 text-sm text-red-700">
                   <p>{error}</p>
-                  {!error.includes('successfully') && !error.includes('loaded') && (
-                    <p className="mt-1">The demo widget below is fully functional for testing.</p>
-                  )}
+                  <p className="mt-2 font-medium">Required Configuration:</p>
+                  <ul className="list-disc list-inside mt-1 text-xs">
+                    <li>Azure Functions must be running</li>
+                    <li>Transak API credentials configured</li>
+                    <li>CORS domains properly set</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!error && widgetUrl && (
+          <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                <span className="text-green-400 text-xl">✅</span>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-green-800">Transak Widget Active</h3>
+                <div className="mt-2 text-sm text-green-700">
+                  <p>Connected to Transak STAGING environment</p>
+                  <p>Widget URL generated successfully with secure sessionId</p>
                 </div>
               </div>
             </div>
@@ -356,134 +349,136 @@ const TransakWidget = () => {
 
             {/* Fiat Currency */}
             <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Fiat Currency
-                </label>
-                <select
-                    value={config.fiatCurrency}
-                    onChange={(e) => handleConfigChange('fiatCurrency', e.target.value)}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                    {fiatCurrencies.map(currency => (
-                        <option key={currency} value={currency}>
-                        {currency}
-                        </option>
-                    ))}
-                </select>
+              </label>
+              <select
+                value={config.fiatCurrency}
+                onChange={(e) => handleConfigChange('fiatCurrency', e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                {fiatCurrencies.map(currency => (
+                  <option key={currency} value={currency}>
+                    {currency}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Country Code */}
             <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Country
-                </label>
-                <select
-                    value={config.countryCode}
-                    onChange={(e) => handleConfigChange('countryCode', e.target.value)}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                    {countryCodes.map(code => (
-                        <option key={code} value={code}>
-                        {code}
-                        </option>
-                    ))}
-                </select>
+              </label>
+              <select
+                value={config.countryCode}
+                onChange={(e) => handleConfigChange('countryCode', e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                {countryCodes.map(code => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+              </select>
             </div>
-            
+
             {/* Amount */}
             <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Default Amount ({config.fiatCurrency})
-                </label>
-                <input
-                    type="number"
-                    value={config.fiatAmount}
-                    onChange={(e) => handleConfigChange('fiatAmount', parseInt(e.target.value) || 100)}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    min="10"
-                    max="10000"
-                />
+              </label>
+              <input
+                type="number"
+                value={config.fiatAmount}
+                onChange={(e) => handleConfigChange('fiatAmount', parseInt(e.target.value) || 100)}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                min="10"
+                max="10000"
+              />
             </div>
-            
+
             {/* Wallet Address */}
             <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Wallet Address (Optional)
-                </label>
-                <input
-                    type="text"
-                    value={config.walletAddress}
-                    onChange={(e) => handleConfigChange('walletAddress', e.target.value)}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="0x... or wallet address"
-                />
+              </label>
+              <input
+                type="text"
+                value={config.walletAddress}
+                onChange={(e) => handleConfigChange('walletAddress', e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="0x... or wallet address"
+              />
             </div>
 
             {/* Email */}
             <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Email (Optional)
-                </label>
-                <input
-                    type="email"
-                    value={config.email}
-                    onChange={(e) => handleConfigChange('email', e.target.value)}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="user@example.com"
-                />
+              </label>
+              <input
+                type="email"
+                value={config.email}
+                onChange={(e) => handleConfigChange('email', e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="user@example.com"
+              />
             </div>
 
             {/* Theme Color */}
             <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Theme Color
-                </label>
-                <div className="flex items-center space-x-3">
-                    <input
-                        type="color"
-                        value={`#${config.themeColor}`}
-                        onChange={(e) => handleConfigChange('themeColor', e.target.value.slice(1))}
-                        className="w-12 h-10 border border-gray-300 rounded cursor-pointer"
-                    />
-                    <input
-                        type="text"
-                        value={config.themeColor}
-                        onChange={(e) => handleConfigChange('themeColor', e.target.value.replace('#', ''))}
-                        className="flex-1 p-2 border border-gray-300 rounded-lg"
-                        placeholder="000000"
-                    />
-                </div>
+              </label>
+              <div className="flex items-center space-x-3">
+                <input
+                  type="color"
+                  value={`#${config.themeColor}`}
+                  onChange={(e) => handleConfigChange('themeColor', e.target.value.slice(1))}
+                  className="w-12 h-10 border border-gray-300 rounded cursor-pointer"
+                />
+                <input
+                  type="text"
+                  value={config.themeColor}
+                  onChange={(e) => handleConfigChange('themeColor', e.target.value.replace('#', ''))}
+                  className="flex-1 p-2 border border-gray-300 rounded-lg"
+                  placeholder="000000"
+                />
+              </div>
             </div>
-            
+
             {/* Options */}
             <div className="space-y-3">
-                <label className="flex items-center">
-                    <input
-                        type="checkbox"
-                        checked={config.hideMenu}
-                        onChange={(e) => handleConfigChange('hideMenu', e.target.checked)}
-                        className="mr-2"
-                    />
-                    <span className="text-sm">Hide Menu</span>
-                </label>
-                <label className="flex items-center">
-                    <input
-                        type="checkbox"
-                        checked={config.isAutoFillUserData}
-                        onChange={(e) => handleConfigChange('isAutoFillUserData', e.target.checked)}
-                        className="mr-2"
-                    />
-                    <span className="text-sm">Auto-fill User Data</span>
-                </label>
-                <label className="flex items-center">
-                    <input
-                        type="checkbox"
-                        checked={config.disableWalletAddressForm}
-                        onChange={(e) => handleConfigChange('disableWalletAddressForm', e.target.checked)}
-                        className="mr-2"
-                    />
-                    <span className="text-sm">Disable Wallet Address Form</span>
-                </label>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={config.hideMenu}
+                  onChange={(e) => handleConfigChange('hideMenu', e.target.checked)}
+                  className="mr-2"
+                />
+                <span className="text-sm">Hide Menu</span>
+              </label>
+              
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={config.isAutoFillUserData}
+                  onChange={(e) => handleConfigChange('isAutoFillUserData', e.target.checked)}
+                  className="mr-2"
+                />
+                <span className="text-sm">Auto-fill User Data</span>
+              </label>
+
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={config.disableWalletAddressForm}
+                  onChange={(e) => handleConfigChange('disableWalletAddressForm', e.target.checked)}
+                  className="mr-2"
+                />
+                <span className="text-sm">Disable Wallet Address Form</span>
+              </label>
             </div>
           </div>
 
@@ -499,9 +494,10 @@ const TransakWidget = () => {
             {isLoading ? (
               <div className="flex flex-col items-center justify-center h-96 space-y-4">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-                <p className="text-gray-600">Loading Transak widget...</p>
+                <p className="text-gray-600">Connecting to Transak API...</p>
+                <p className="text-sm text-gray-500">Generating secure widget URL</p>
               </div>
-            ) : widgetUrl && widgetUrl !== 'demo-preview-mode' ? (
+            ) : widgetUrl ? (
               <div className="border-2 border-gray-200 rounded-lg overflow-hidden shadow-inner">
                 <iframe
                   src={widgetUrl}
@@ -513,103 +509,38 @@ const TransakWidget = () => {
                   className="w-full"
                   sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
                   onLoad={() => {
-                    console.log('Production widget iframe loaded successfully');
-                    setError('Production widget loaded successfully! Using live Transak API.');
+                    console.log('Transak widget loaded successfully');
                   }}
                   onError={(e) => {
-                    console.error('Widget iframe failed to load:', e);
-                    setError('Widget failed to load - check API configuration');
+                    console.error('Widget failed to load:', e);
                   }}
                 />
-                
-                <div className="mt-2 p-3 bg-green-50 rounded text-center">
-                  <p className="text-sm text-green-700">
-                    🎯 <strong>Production Mode:</strong> Live Transak widget with secure API integration
-                  </p>
-                </div>
               </div>
             ) : (
-              <div className="border-2 border-gray-200 rounded-lg">
-                <div className="p-6 bg-gradient-to-br from-blue-50 to-indigo-100">
-                  <div className="max-w-md mx-auto bg-white rounded-lg shadow-lg p-6">
-                    <div className="text-center mb-4">
-                      <h3 className="text-lg font-semibold text-gray-800">
-                        {transactionType === 'SELL' ? '💰 Sell Crypto' : '🚀 Buy Crypto'}
-                      </h3>
-                      <p className="text-sm text-gray-600 mt-1">Transak Widget Preview</p>
-                    </div>
-                    
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Network:</span>
-                        <span className="font-medium">{networks[config.network].name}</span>
-                      </div>
-                      
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Cryptocurrency:</span>
-                        <span className="font-medium">{config.cryptoCurrencyCode}</span>
-                      </div>
-                      
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Amount:</span>
-                        <span className="font-medium">{config.fiatAmount} {config.fiatCurrency}</span>
-                      </div>
-                      
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Country:</span>
-                        <span className="font-medium">{config.countryCode}</span>
-                      </div>
-                      
-                      {config.walletAddress && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">Wallet:</span>
-                          <span className="font-medium text-xs">
-                            {config.walletAddress.slice(0, 6)}...{config.walletAddress.slice(-4)}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="mt-6 pt-4 border-t">
-                      <button className="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:bg-blue-600 transition-colors">
-                        {transactionType === 'SELL' ? 'Start Selling' : 'Start Buying'}
-                      </button>
-                    </div>
-                    
-                    <div className="mt-4 text-center">
-                      <p className="text-xs text-gray-500">
-                        Demo Preview - Deploy for live transactions
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="p-4 bg-gray-50 text-center">
-                  <p className="text-sm text-gray-600 mb-2">
-                    Widget Configuration Preview
-                  </p>
-                  <div className="flex flex-wrap gap-2 justify-center">
-                    <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
-                      {networks[config.network].name}
-                    </span>
-                    <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
-                      {config.cryptoCurrencyCode}
-                    </span>
-                    <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs">
-                      {config.fiatAmount} {config.fiatCurrency}
-                    </span>
-                    <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded text-xs">
-                      {transactionType}
-                    </span>
-                  </div>
-                  
-                  <button 
-                    onClick={generateDemoWidget}
-                    className="mt-3 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm"
-                  >
-                    Try Loading Widget Again
-                  </button>
-                </div>
+              <div className="flex flex-col items-center justify-center h-96 space-y-4 border-2 border-gray-200 rounded-lg bg-gray-50">
+                <div className="text-gray-400 text-6xl">🔗</div>
+                <h3 className="text-lg font-medium text-gray-700">Widget Not Available</h3>
+                <p className="text-sm text-gray-500 text-center max-w-md">
+                  Unable to generate Transak widget URL. Please check your API configuration and try again.
+                </p>
+                <button 
+                  onClick={() => {
+                    const initializeWidget = async () => {
+                      const token = await getAccessToken();
+                      if (token) {
+                        await createWidgetUrl(token);
+                      } else {
+                        setError('Failed to connect to Transak API. Please check your configuration.');
+                        setIsLoading(false);
+                      }
+                    };
+                    initializeWidget();
+                  }}
+                  disabled={isLoading}
+                  className="mt-4 px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300"
+                >
+                  Retry Connection
+                </button>
               </div>
             )}
 
@@ -618,7 +549,7 @@ const TransakWidget = () => {
                 Current Configuration:
               </h3>
               <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
-                <div><strong>Mode:</strong> {error ? 'Demo' : 'Production'}</div>
+                <div><strong>Mode:</strong> {error ? 'Error' : 'Production'}</div>
                 <div><strong>Type:</strong> {transactionType}</div>
                 <div><strong>Network:</strong> {networks[config.network].name}</div>
                 <div><strong>Token:</strong> {config.cryptoCurrencyCode}</div>
@@ -629,18 +560,29 @@ const TransakWidget = () => {
             </div>
 
             <button
-              onClick={initializeWidget}
+              onClick={() => {
+                const initializeWidget = async () => {
+                  const token = await getAccessToken();
+                  if (token) {
+                    await createWidgetUrl(token);
+                  } else {
+                    setError('Failed to connect to Transak API. Please check your configuration.');
+                    setIsLoading(false);
+                  }
+                };
+                initializeWidget();
+              }}
               disabled={isLoading}
               className="w-full mt-4 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white font-medium py-3 px-4 rounded-lg transition-colors"
             >
-              {isLoading ? 'Testing API...' : 'Test Production API Connection'}
+              {isLoading ? 'Connecting to Transak...' : 'Reconnect to Transak API'}
             </button>
             
             <div className="mt-2 text-center">
               <p className="text-xs text-gray-500">
-                {error 
-                  ? 'Currently in demo mode - all features work for testing' 
-                  : 'Connected to production API'}
+                {widgetUrl 
+                  ? 'Connected to live Transak API' 
+                  : 'API connection required for widget'}
               </p>
             </div>
           </div>
@@ -648,78 +590,42 @@ const TransakWidget = () => {
 
         {/* API Integration Guide */}
         <div className="mt-8 bg-white rounded-xl shadow-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">🔧 Development & Production Setup</h2>
+          <h2 className="text-xl font-semibold mb-4">🚀 Transak Integration Status</h2>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-green-50 p-4 rounded-lg">
-              <h3 className="font-semibold mb-3 text-green-600">✅ Demo Mode (Current)</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h3 className="font-semibold mb-3 text-blue-600">🔧 Current Environment</h3>
               <ul className="text-sm space-y-2 text-gray-700">
-                <li>• Widget fully functional</li>
-                <li>• All features working</li>
-                <li>• Live configuration updates</li>
-                <li>• BUY/SELL testing</li>
-                <li>• No API credentials needed</li>
+                <li>• <strong>Environment:</strong> STAGING</li>
+                <li>• <strong>API Base:</strong> api-gateway-stg.transak.com</li>
+                <li>• <strong>Widget Mode:</strong> Production API</li>
+                <li>• <strong>Security:</strong> Server-side URL generation</li>
+                <li>• <strong>Authentication:</strong> Bearer token based</li>
               </ul>
             </div>
             
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h3 className="font-semibold mb-3 text-blue-600">🚀 Local Production API</h3>
+            <div className="bg-green-50 p-4 rounded-lg">
+              <h3 className="font-semibold mb-3 text-green-600">✅ Ready Features</h3>
               <ul className="text-sm space-y-2 text-gray-700">
-                <li>• Start: <code>cd api && func start</code></li>
-                <li>• Add Transak credentials</li>
-                <li>• Test real API integration</li>
-                <li>• Secure token handling</li>
-                <li>• Production widget URLs</li>
-              </ul>
-            </div>
-
-            <div className="bg-purple-50 p-4 rounded-lg">
-              <h3 className="font-semibold mb-3 text-purple-600">🌐 Azure Deployment</h3>
-              <ul className="text-sm space-y-2 text-gray-700">
-                <li>• GitHub Actions CI/CD</li>
-                <li>• Azure Static Web Apps</li>
-                <li>• Environment variables</li>
-                <li>• Domain configuration</li>
-                <li>• Production security</li>
+                <li>• Live API integration</li>
+                <li>• Secure sessionId widget URLs</li>
+                <li>• Domain validation</li>
+                <li>• BUY/SELL transactions</li>
+                <li>• Multiple networks & tokens</li>
               </ul>
             </div>
           </div>
 
           <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-            <h3 className="font-medium text-gray-800 mb-2">📋 Quick Start Commands:</h3>
+            <h3 className="font-medium text-gray-800 mb-2">📋 Required Configuration:</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div>
-                <p className="font-medium text-gray-700">For Local API Testing:</p>
+                <p className="font-medium text-gray-700">Environment Variables:</p>
                 <code className="block bg-white p-2 rounded mt-1 text-xs">
-                  # Terminal 1<br/>
-                  npm start<br/><br/>
-                  # Terminal 2<br/>
-                  cd api<br/>
-                  func start --port 7071
-                </code>
-              </div>
-              <div>
-                <p className="font-medium text-gray-700">For Azure Deployment:</p>
-                <code className="block bg-white p-2 rounded mt-1 text-xs">
-                  git add .<br/>
-                  git commit -m "Deploy"<br/>
-                  git push origin main<br/><br/>
-                  # Auto-deploys via GitHub Actions
-                </code>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-            <h3 className="font-medium text-gray-800 mb-2">📋 Transak Integration Status:</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="font-medium text-gray-700">Current Implementation:</p>
-                <code className="block bg-white p-2 rounded mt-1 text-xs">
-                  {'✅ New API-based approach (2024)'}<br/>
-                  {'✅ Server-side widget URL generation'}<br/>
-                  {'✅ Secure authentication with tokens'}<br/>
-                  {'✅ Production-ready architecture'}
+                  TRANSAK_API_KEY=your_staging_key<br/>
+                  TRANSAK_API_SECRET=your_staging_secret<br/>
+                  TRANSAK_ENVIRONMENT=STAGING<br/>
+                  ALLOWED_DOMAINS=your_domain
                 </code>
               </div>
               <div>
@@ -727,52 +633,21 @@ const TransakWidget = () => {
                 <code className="block bg-white p-2 rounded mt-1 text-xs">
                   POST /api/transak/auth<br/>
                   POST /api/transak/create-widget-url<br/>
-                  Base: api-gateway.transak.com<br/>
-                  {'Format: { widgetParams: {...} }'}
+                  Base: api-gateway-stg.transak.com
                 </code>
               </div>
             </div>
           </div>
 
-          {error && error.includes('not running') && (
-            <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <h3 className="font-medium text-blue-800 mb-2">💡 Ready for Production API Testing:</h3>
-              <div className="text-sm text-blue-700 space-y-2">
-                <p><strong>⚠️ Important:</strong> Transak has deprecated direct URL parameters. Your implementation uses the new mandatory API-based approach.</p>
-                <ol className="list-decimal list-inside space-y-1">
-                  <li>Install Azure Functions: <code className="bg-white px-1 rounded">npm install -g azure-functions-core-tools@4</code></li>
-                  <li>Get credentials from Transak dashboard</li>
-                  <li>Add to <code className="bg-white px-1 rounded">api/local.settings.json</code>:</li>
-                </ol>
-                <code className="block bg-white p-2 rounded mt-1 text-xs">
-                  {'"TRANSAK_API_KEY": "your_key",'}<br/>
-                  {'"TRANSAK_API_SECRET": "your_secret",'}<br/>
-                  {'"TRANSAK_ENVIRONMENT": "STAGING"'}
-                </code>
-                <ol className="list-decimal list-inside space-y-1" start="4">
-                  <li>Start API: <code className="bg-white px-1 rounded">cd api && func start</code></li>
-                  <li>Click "Test Production API Connection" above</li>
-                </ol>
-              </div>
-            </div>
-          )}
-
-          {!error && (
-            <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
-              <h3 className="font-medium text-green-800 mb-2">🎉 Production API Connected!</h3>
-              <p className="text-sm text-green-700">
-                Your app is using Transak's new mandatory API-based approach with secure server-side 
-                widget URL generation. Widget URLs are created with sessionId for maximum security.
-              </p>
-            </div>
-          )}
-
-          <div className="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-200">
-            <h3 className="font-medium text-amber-800 mb-2">📘 API Migration Notice</h3>
-            <p className="text-sm text-amber-700">
-              <strong>Transak Requirement:</strong> All partners must use the Create Widget URL API. 
-              Direct URL parameters are deprecated. Your implementation is already compliant with the new requirements.
-            </p>
+          <div className="mt-6 p-4 bg-amber-50 rounded-lg border border-amber-200">
+            <h3 className="font-medium text-amber-800 mb-2">🎯 Next Steps:</h3>
+            <ol className="text-sm text-amber-700 space-y-1 list-decimal list-inside">
+              <li>Configure Transak STAGING credentials in Azure environment variables</li>
+              <li>Test the widget with staging API</li>
+              <li>Verify BUY/SELL flows work correctly</li>
+              <li>Switch to PRODUCTION environment when ready</li>
+              <li>Update credentials to production keys</li>
+            </ol>
           </div>
         </div>
       </div>
@@ -781,4 +656,3 @@ const TransakWidget = () => {
 };
 
 export default TransakWidget;
-
