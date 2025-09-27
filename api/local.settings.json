@@ -1,0 +1,10 @@
+{
+    "IsEncrypted": false,
+    "Values": {
+      "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+      "FUNCTIONS_WORKER_RUNTIME": "node",
+      "TRANSAK_API_KEY": "0fedc8c1-38db-455e-8792-8e8174bead31",
+      "TRANSAK_API_SECRET": "Cho/6EahpmWqV0I3xqPKYw==",
+      "TRANSAK_ENVIRONMENT": "STAGING"
+    }
+}
