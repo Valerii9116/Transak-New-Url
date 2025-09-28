@@ -58,7 +58,7 @@ const TransakWidget = () => {
 
         const transakConfig = {
           apiKey: config.apiKey,
-          environment: config.environment === 'PRODUCTION' ? Transak.ENVIRONMENTS.PRODUCTION : Transak.ENVIRONMENTS.STAGING,
+          environment: config.environment === 'PRODUCTION' ? 'PRODUCTION' : 'STAGING',
           containerId: 'transakMount',
           hostURL: config.hostURL,
           fiatCurrency: config.fiatCurrency,
