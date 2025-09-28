@@ -13,6 +13,6 @@
     },
     "globalHeaders": {
       "X-Content-Type-Options": "nosniff",
-      "Content-Security-Policy": "default-src 'self' https://staging-global.transak.com https://global.transak.com https://api-gateway-stg.transak.com https://api-gateway.transak.com; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; frame-src https://staging-global.transak.com https://global.transak.com;"
+      "Content-Security-Policy": "default-src 'self' https://staging-global.transak.com https://global.transak.com https://api-gateway-stg.transak.com https://api-gateway.transak.com https://red-sky-05a3a9210.2.azurestaticapps.net/; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; frame-src https://staging-global.transak.com https://global.transak.com;"
     }
   }
