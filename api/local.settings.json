@@ -5,6 +5,7 @@
       "FUNCTIONS_WORKER_RUNTIME": "node",
       "TRANSAK_API_KEY": "0fedc8c1-38db-455e-8792-8e8174bead31",
       "TRANSAK_API_SECRET": "Cho/6EahpmWqV0I3xqPKYw==",
-      "TRANSAK_ENVIRONMENT": "STAGING"
+      "TRANSAK_ENVIRONMENT": "STAGING",
+      "ALLOWED_DOMAINS": "http://localhost:3000,http://127.0.0.1:3000,https://red-sky-05a3a9210.2.azurestaticapps.net"
     }
 }
