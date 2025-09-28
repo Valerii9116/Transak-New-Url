@@ -7,7 +7,7 @@ const TransakWidget = () => {
   const [error, setError] = useState('');
   const [isWidgetOpen, setIsWidgetOpen] = useState(false);
   const widgetContainerRef = useRef(null);
-
+  const environmentUrls = "https://staging-global.transak.com";
   const [config, setConfig] = useState({
     apiKey: process.env.REACT_APP_TRANSAK_API_KEY || 'your-staging-api-key',
     environment: process.env.REACT_APP_TRANSAK_ENVIRONMENT || 'STAGING',
@@ -59,6 +59,7 @@ const TransakWidget = () => {
         const transakConfig = {
           apiKey: config.apiKey,
           environment: config.environment === 'PRODUCTION' ? 'PRODUCTION' : 'STAGING',
+          widgetUrl: environmentUrls[config.environment], 
           containerId: 'transakMount',
           hostURL: config.hostURL,
           fiatCurrency: config.fiatCurrency,
