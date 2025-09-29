@@ -74,7 +74,7 @@ const TransakWidget = () => {
   // Initialize Transak SDK with server-side CreateWidgetURL approach
   useEffect(() => {
     const createWidgetUrlAndInitialize = async () => {
-      if (!config.apiKey || config.apiKey === 'your-staging-api-key' || config.apiKey.length < 10) {
+      if (!config.apiKey || config.apiKey === 'your-staging-api-key') {
         return;
       }
 
