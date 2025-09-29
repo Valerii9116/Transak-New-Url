@@ -121,8 +121,8 @@ const TransakWidget = () => {
         // For now, create a direct URL since server-side CreateWidgetURL isn't implemented yet
         // TODO: Replace this with actual server API call to CreateWidgetURL endpoint
         const baseUrl = config.environment === 'PRODUCTION' 
-          ? 'https://api-gateway.transak.com/' 
-          : 'https://api-gateway-stg.transak.com/';
+        ? 'https://global.transak.com' 
+        : 'https://staging-global.transak.com';
 
         const queryParams = new URLSearchParams(widgetParams).toString();
         const widgetUrl = `${baseUrl}?${queryParams}`;
